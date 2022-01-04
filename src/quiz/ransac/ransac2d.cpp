@@ -6,6 +6,8 @@
 #include "../../processPointClouds.h"
 // using templates for processPointClouds so also include .cpp to help linker
 #include "../../processPointClouds.cpp"
+#include <time.h>
+#include <limits>
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr CreateData()
 {
@@ -61,22 +63,138 @@ pcl::visualization::PCLVisualizer::Ptr initScene()
   	return viewer;
 }
 
+class	Segment
+{
+public:
+	Segment(int size, pcl::PointCloud<pcl::PointXYZ>::Ptr _cloud)
+	{
+		this->cloud = _cloud;
+
+		while (this->indices.size() < size)
+			this->indices.insert(rand() % this->cloud->points.size());	
+	}
+
+	std::unordered_set<int> get_inliers(float distanceTol)
+	{
+		std::unordered_set<int> inliers;
+
+		for (int i = 0; i < this->cloud->points.size(); i++)
+		{
+			// skip if the point is already in
+			if (this->indices.count(i) > 0)
+				continue;
+
+			// pick a point
+			auto p = this->cloud->points[i];
+
+			if (this->get_distance(p) <= distanceTol)
+				this->indices.insert(i);
+		}
+		inliers = this->indices;
+		this->indices.clear();
+
+		return inliers;
+	}
+	
+	virtual float get_distance(pcl::PointXYZ p) = 0;
+
+	~Segment() {}
+
+protected:
+	std::array<float, 4> m_coef;
+	std::unordered_set<int> indices;
+private:
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+};
+
+
+class LineSeg : public Segment
+{
+public:
+	LineSeg(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+	:Segment(2, cloud)
+	{
+		auto iter = this->indices.begin();
+
+		auto p1 = cloud->points[*iter++];
+		auto p2 = cloud->points[*iter];
+		
+		this->m_coef[0] = p1.y - p2.y; 
+		this->m_coef[1] = p2.x - p1.x; 
+		this->m_coef[2] = p1.x * p2.y - p2.x*p1.y;
+	}
+
+	float get_distance(pcl::PointXYZ p)
+	{
+		return fabs(this->m_coef[0] * p.x + 
+									this->m_coef[1] * p.y + 
+									this->m_coef[2]) / 
+									(sqrt(this->m_coef[0] * this->m_coef[0] + 
+												this->m_coef[1] * this->m_coef[1]));
+	}
+
+	~LineSeg()
+	{
+	}
+};
+
+
+class PlaneSeg : public Segment
+{
+public:
+	PlaneSeg(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+	:Segment(3, cloud)
+	{
+		auto iter = this->indices.begin();
+
+		auto p1 = cloud->points[*iter++];
+		auto p2 = cloud->points[*iter++];
+		auto p3 = cloud->points[*iter];
+
+		float i = (p2.y - p1.y) * (p3.z - p1.z) - (p2.z - p1.z) * (p3.y - p1.y);
+		float j = (p2.z - p1.z) * (p3.x - p1.x) - (p2.x - p1.x) * (p3.z - p1.z);
+		float k = (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+
+		this->m_coef[0] = i; 
+		this->m_coef[1] = j; 
+		this->m_coef[2] = k;
+		this->m_coef[3] = (i * p1.x + j * p1.y + k * p1.z);
+
+	}
+
+	float get_distance(pcl::PointXYZ p)
+	{
+			return fabs(this->m_coef[0] * p.x + 
+									this->m_coef[1] * p.y + 
+									this->m_coef[2] * p.z + 
+									this->m_coef[3]) / 
+									(sqrt(this->m_coef[0] * this->m_coef[0] + 
+												this->m_coef[1] * this->m_coef[1] +
+												this->m_coef[2] * this->m_coef[2]));
+	}
+	
+	~PlaneSeg()
+	{
+	}
+};
+
 std::unordered_set<int> Ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, int maxIterations, float distanceTol)
 {
 	std::unordered_set<int> inliersResult;
 	srand(time(NULL));
 	
-	// TODO: Fill in this function
+	while(maxIterations--)
+	{
+		PlaneSeg segment(cloud);
 
-	// For max iterations 
+		std::unordered_set<int> inliers = segment.get_inliers(distanceTol);
 
-	// Randomly sample subset and fit line
-
-	// Measure distance between every point and fitted line
-	// If distance is smaller than threshold count it as inlier
-
-	// Return indicies of inliers from fitted line with most inliers
-	
+		if (inliers.size() > inliersResult.size())
+		{
+			inliersResult = inliers; 
+		}
+		
+	}
 	return inliersResult;
 
 }
@@ -88,11 +206,11 @@ int main ()
 	pcl::visualization::PCLVisualizer::Ptr viewer = initScene();
 
 	// Create data
-	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = CreateData();
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = CreateData3D();
 	
 
 	// TODO: Change the max iteration and distance tolerance arguments for Ransac function
-	std::unordered_set<int> inliers = Ransac(cloud, 0, 0);
+	std::unordered_set<int> inliers = Ransac(cloud, 10, 0.22);
 
 	pcl::PointCloud<pcl::PointXYZ>::Ptr  cloudInliers(new pcl::PointCloud<pcl::PointXYZ>());
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloudOutliers(new pcl::PointCloud<pcl::PointXYZ>());
