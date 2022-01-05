@@ -63,21 +63,26 @@ pcl::visualization::PCLVisualizer::Ptr initScene()
   	return viewer;
 }
 
+/**
+ * @brief Pick randomly a segment (line or plane) from a data cloud
+ * 	and return the data belonging to this segment
+ * 
+ */
 class	Segment
 {
 public:
 	Segment(int size, pcl::PointCloud<pcl::PointXYZ>::Ptr _cloud)
 	{
+		this->indices.clear();
 		this->cloud = _cloud;
 
 		while (this->indices.size() < size)
-			this->indices.insert(rand() % this->cloud->points.size());	
+			this->indices.insert(rand() % this->cloud->points.size());
 	}
 
+	/* */
 	std::unordered_set<int> get_inliers(float distanceTol)
 	{
-		std::unordered_set<int> inliers;
-
 		for (int i = 0; i < this->cloud->points.size(); i++)
 		{
 			// skip if the point is already in
@@ -90,10 +95,7 @@ public:
 			if (this->get_distance(p) <= distanceTol)
 				this->indices.insert(i);
 		}
-		inliers = this->indices;
-		this->indices.clear();
-
-		return inliers;
+		return this->indices;
 	}
 	
 	virtual float get_distance(pcl::PointXYZ p) = 0;
@@ -106,7 +108,6 @@ protected:
 private:
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 };
-
 
 class LineSeg : public Segment
 {
@@ -127,17 +128,16 @@ public:
 	float get_distance(pcl::PointXYZ p)
 	{
 		return fabs(this->m_coef[0] * p.x + 
-									this->m_coef[1] * p.y + 
-									this->m_coef[2]) / 
-									(sqrt(this->m_coef[0] * this->m_coef[0] + 
-												this->m_coef[1] * this->m_coef[1]));
+								this->m_coef[1] * p.y + 
+								this->m_coef[2]) / 
+								(sqrt(this->m_coef[0] * this->m_coef[0] + 
+											this->m_coef[1] * this->m_coef[1]));
 	}
 
 	~LineSeg()
 	{
 	}
 };
-
 
 class PlaneSeg : public Segment
 {
@@ -158,7 +158,7 @@ public:
 		this->m_coef[0] = i; 
 		this->m_coef[1] = j; 
 		this->m_coef[2] = k;
-		this->m_coef[3] = (i * p1.x + j * p1.y + k * p1.z);
+		this->m_coef[3] = -(i * p1.x + j * p1.y + k * p1.z);
 
 	}
 
@@ -178,7 +178,26 @@ public:
 	}
 };
 
-std::unordered_set<int> Ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, int maxIterations, float distanceTol)
+std::unordered_set<int> Ransac2D(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, int maxIterations, float distanceTol)
+{
+	std::unordered_set<int> inliersResult;
+	srand(time(NULL));
+	
+	while(maxIterations--)
+	{
+		LineSeg segment(cloud);
+
+		std::unordered_set<int> inliers = segment.get_inliers(distanceTol);
+
+		if (inliers.size() > inliersResult.size())
+			inliersResult = inliers; 
+	}
+
+	return inliersResult;
+
+}
+
+std::unordered_set<int> Ransac3D(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, int maxIterations, float distanceTol)
 {
 	std::unordered_set<int> inliersResult;
 	srand(time(NULL));
@@ -190,11 +209,9 @@ std::unordered_set<int> Ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, int ma
 		std::unordered_set<int> inliers = segment.get_inliers(distanceTol);
 
 		if (inliers.size() > inliersResult.size())
-		{
 			inliersResult = inliers; 
-		}
-		
 	}
+
 	return inliersResult;
 
 }
@@ -210,7 +227,7 @@ int main ()
 	
 
 	// TODO: Change the max iteration and distance tolerance arguments for Ransac function
-	std::unordered_set<int> inliers = Ransac(cloud, 10, 0.22);
+	std::unordered_set<int> inliers = Ransac3D(cloud, 10, 0.25);
 
 	pcl::PointCloud<pcl::PointXYZ>::Ptr  cloudInliers(new pcl::PointCloud<pcl::PointXYZ>());
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloudOutliers(new pcl::PointCloud<pcl::PointXYZ>());
