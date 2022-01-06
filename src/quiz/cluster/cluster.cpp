@@ -76,11 +76,47 @@ void render2DTree(Node* node, pcl::visualization::PCLVisualizer::Ptr& viewer, Bo
 
 std::vector<std::vector<int>> euclideanCluster(const std::vector<std::vector<float>>& points, KdTree* tree, float distanceTol)
 {
-
-	// TODO: Fill out this function to return list of indices for each cluster
+	std::vector<bool> visited(points.size(), false);
+	std::vector<int> p_stack(points.size());
 
 	std::vector<std::vector<int>> clusters;
- 
+
+	for (int curr_id = 0; curr_id < points.size(); curr_id++)
+	{
+
+		if (!visited[curr_id])
+		{
+			std::vector<int> cluster;
+
+			// find the cluster
+		  //std::vector<int> temp_cluster = tree->search(points[curr_id], distanceTol));
+			//p_stack.insert(p_stack.end(), temp_cluster.begin(), temp_cluster.end());
+			p_stack.push_back(curr_id);
+
+			while (!p_stack.empty())
+			{
+				//int p_id = p_stack.front();
+				//p_stack.pop_front();
+				int p_id = p_stack.back();
+				p_stack.pop_back();
+
+				if (!visited[p_id])
+				{
+					visited[p_id] = true;
+					cluster.push_back(p_id);
+		  		std::vector<int> temp_cluster = tree->search(points[curr_id], distanceTol);
+					// put all the points
+					p_stack.insert(p_stack.end(), temp_cluster.begin(), temp_cluster.end());
+				}
+
+			}
+			// add cluster to list of clusters
+			clusters.push_back(cluster);
+
+		}
+
+	}
+
 	return clusters;
 
 }
@@ -128,7 +164,7 @@ int main ()
 
   	// Render clusters
   	int clusterId = 0;
-	std::vector<Color> colors = {Color(1,0,0), Color(0,1,0), Color(0,0,1)};
+	std::vector<Color> colors = {Color(1,0,0), Color(0,1,0), Color(0,1,1)};
   	for(std::vector<int> cluster : clusters)
   	{
   		pcl::PointCloud<pcl::PointXYZ>::Ptr clusterCloud(new pcl::PointCloud<pcl::PointXYZ>());

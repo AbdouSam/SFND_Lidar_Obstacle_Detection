@@ -4,6 +4,8 @@
 #include "../../render/render.h"
 
 
+const int K = 2;
+
 // Structure to represent node of kd tree
 
 struct Node
@@ -39,8 +41,6 @@ struct KdTree
 
 	void insert(std::vector<float> point, int id)
 	{
-		int depth = point.size();
-		int curr_depth = 0;
 		Node * node = new Node(point, id);
 
 		if (this->root == NULL)
@@ -49,16 +49,15 @@ struct KdTree
 			return;
 		}
 
-		if (depth < 1)
-			return;
+		int depth = 0;
 
 		Node * temp = this->root;
 
 		while (temp != NULL)
 		{
-			if (point[curr_depth] >= temp->point[curr_depth])
+			if (point[depth] < temp->point[depth])
 			{
-				//put left
+				// put left
 				if (temp->left == NULL)
 				{
 					temp->left = node;
@@ -82,20 +81,19 @@ struct KdTree
 					temp = temp->right;
 				}
 			}
-			curr_depth = (curr_depth + 1) % depth;
+			depth = (depth + 1) % K;
 		}
 
 	}
 
 	bool is_point_inbox(std::vector<float>& point, std::vector<float>& target, float distanceTol)
 	{
+		// sanity check
 		bool p_in_box = true;
 
-		// sanity check
 		if ((point.size() != target.size()) && (point.size() > 0))
 			return false;
 
-		// if the point is out of one boundary of the target it is out
 		for (int i = 0; i < point.size(); i++)
 		{
 			if (point[i] < (target[i] - distanceTol) || (point[i] > target[i] + distanceTol))
@@ -127,22 +125,13 @@ struct KdTree
 		
 		return false;
 	}
-
 	// return a list of point ids in the tree that are within distance of target
 	std::vector<int> search(std::vector<float> target, float distanceTol)
 	{
 		std::vector<int> ids;
 
-		int curr_depth = 0;
-		int depth = target.size();
+		int depth = 0;
 		std::vector<Node *> stack;
-
-		// sanity check
-		if (depth < 1)
-			return ids;
-
-		// we could have used recursion to avoid stacks, but if it is for embedded use
-		// recursion is not recommended.
 
 		stack.push_back(this->root);
 
@@ -151,35 +140,32 @@ struct KdTree
 			Node * node = stack.back();
 			stack.pop_back();
 
-			// first we use this cheap calculation to decide whether to the point is nearby
 			if (is_point_inbox(node->point, target, distanceTol))
 			{
-				// if it is neaby, we perform this more expensive calculation to 
 				if (is_point_inraduis(node->point, target, distanceTol))
 					ids.push_back(node->id);
 			}
 
-			// navigate left, right or both
-			if ((target[curr_depth] - distanceTol) < node->point[curr_depth])
+			// navigate left or right
+			if ((target[depth] - distanceTol) < node->point[depth])
 			{
 				if (node->left != NULL)
 					stack.push_back(node->left);
 			}
 
-			if ((target[curr_depth] + distanceTol) > node->point[curr_depth])
+			if ((target[depth] + distanceTol) > node->point[depth])
 			{
 				if (node->right != NULL)
 					stack.push_back(node->right);
 			}
 
-			curr_depth = (curr_depth + 1) % depth;
+			depth = (depth + 1) % K;
 		}
 
 		return ids;
 	}
-
+	
 };
-
 
 
 
