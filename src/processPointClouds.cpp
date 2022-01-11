@@ -1,7 +1,6 @@
 // PCL lib Functions for processing point clouds 
-
+#include <unordered_set>
 #include "processPointClouds.h"
-#include "quiz/ransac/ransac.h"
 
 //constructor:
 template<typename PointT>
@@ -26,14 +25,52 @@ typename pcl::PointCloud<PointT>::Ptr ProcessPointClouds<PointT>::FilterCloud(ty
 
     // Time segmentation process
     auto startTime = std::chrono::steady_clock::now();
+    
+    typename pcl::PointCloud<PointT>::Ptr filtered_cloud(new pcl::PointCloud<PointT>);
 
-    // TODO:: Fill in the function to do voxel grid point reduction and region based filtering
+    // the voxel to down size the dense cloud into the leaf size (in meters, ie 0.01 = 1cm)
+    pcl::VoxelGrid<PointT> vg;
+    vg.setInputCloud(cloud);
+    vg.setLeafSize(filterRes, filterRes, filterRes);
+    vg.filter(*filtered_cloud);
 
+    // Crop box is to remove all data that are away from the car, for example 30 meters aways obj
+    // and further are ignored, we take a region
+
+    typename pcl::PointCloud<PointT>::Ptr cloud_region(new pcl::PointCloud<PointT>);
+    pcl::CropBox<PointT> region(true);
+    region.setMin(minPoint);
+    region.setMax(maxPoint);
+    region.setInputCloud(filtered_cloud);
+    region.filter(*cloud_region);
+
+    // remove the vertices that represent the roof we take a cropbox around the roof.
+    std::vector<int> indices;
+
+    pcl::CropBox<PointT> roof(true);
+    roof.setMin(Eigen::Vector4f (-1.5, -1.7, -1, 1));
+    roof.setMax(Eigen::Vector4f (2.6, 1.7, -0.4, 1));
+    roof.setInputCloud(cloud_region);
+    roof.filter(indices);
+
+    // the inliers are the points reflected by the roof
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    for (int point: indices)
+        inliers->indices.push_back(point);
+
+    // we set the indices of the roof as negatives and remove them from the cloud_region
+    pcl::ExtractIndices<PointT> extract;
+    extract.setInputCloud (cloud_region);
+    extract.setIndices(inliers);
+    extract.setNegative(true);
+    extract.filter(*cloud_region);
+
+    
     auto endTime = std::chrono::steady_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     std::cout << "filtering took " << elapsedTime.count() << " milliseconds" << std::endl;
 
-    return cloud;
+    return cloud_region;
 
 }
 
@@ -108,7 +145,165 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
     return segResult;
 }
 
+/*****************************************************************************
+ * Ransac
+ *****************************************************************************/
 
+template<typename PointT>
+class	Segment
+{
+public:
+	Segment(int size, typename pcl::PointCloud<PointT>::Ptr _cloud)
+	{
+		this->indices.clear();
+		this->cloud = _cloud;
+
+		while (this->indices.size() < size)
+			this->indices.insert(rand() % this->cloud->points.size());
+	}
+
+	/* */
+	std::unordered_set<int> get_inliers(float distanceTol)
+	{
+		for (int i = 0; i < this->cloud->points.size(); i++)
+		{
+			// skip if the point is already in
+			if (this->indices.count(i) > 0)
+				continue;
+
+			// pick a point
+			auto p = this->cloud->points[i];
+
+			if (this->get_distance(p) <= distanceTol)
+				this->indices.insert(i);
+		}
+		return this->indices;
+	}
+	
+	virtual float get_distance(PointT p) = 0;
+
+	~Segment() {}
+
+protected:
+	std::array<float, 4> m_coef;
+	std::unordered_set<int> indices;
+private:
+	typename pcl::PointCloud<PointT>::Ptr cloud;
+};
+
+template<typename PointT>
+class LineSeg : public Segment<PointT>
+{
+public:
+	LineSeg(typename pcl::PointCloud<PointT>::Ptr cloud)
+	:Segment<PointT>(2, cloud)
+	{
+		auto iter = this->indices.begin();
+
+		auto p1 = cloud->points[*iter++];
+		auto p2 = cloud->points[*iter];
+		
+		this->m_coef[0] = p1.y - p2.y; 
+		this->m_coef[1] = p2.x - p1.x; 
+		this->m_coef[2] = p1.x * p2.y - p2.x*p1.y;
+	}
+
+	float get_distance(PointT p)
+	{
+		return fabs(this->m_coef[0] * p.x + 
+								this->m_coef[1] * p.y + 
+								this->m_coef[2]) / 
+								(sqrt(this->m_coef[0] * this->m_coef[0] + 
+									    this->m_coef[1] * this->m_coef[1]));
+	}
+
+	~LineSeg()
+	{
+	}
+};
+template<typename PointT>
+class PlaneSeg : public Segment<PointT>
+{
+public:
+	PlaneSeg(typename pcl::PointCloud<PointT>::Ptr cloud)
+	:Segment<PointT>(3, cloud)
+	{
+		auto iter = this->indices.begin();
+
+		auto p1 = cloud->points[*iter++];
+		auto p2 = cloud->points[*iter++];
+		auto p3 = cloud->points[*iter];
+
+		float i = (p2.y - p1.y) * (p3.z - p1.z) - (p2.z - p1.z) * (p3.y - p1.y);
+		float j = (p2.z - p1.z) * (p3.x - p1.x) - (p2.x - p1.x) * (p3.z - p1.z);
+		float k = (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+
+		this->m_coef[0] = i; 
+		this->m_coef[1] = j; 
+		this->m_coef[2] = k;
+		this->m_coef[3] = -(i * p1.x + j * p1.y + k * p1.z);
+
+	}
+
+	float get_distance(PointT p)
+	{
+			return fabs(this->m_coef[0] * p.x + 
+									this->m_coef[1] * p.y + 
+									this->m_coef[2] * p.z + 
+									this->m_coef[3]) / 
+									(sqrt(this->m_coef[0] * this->m_coef[0] + 
+												this->m_coef[1] * this->m_coef[1] +
+												this->m_coef[2] * this->m_coef[2]));
+	}
+	
+	~PlaneSeg()
+	{
+	}
+};
+
+template<typename PointT>
+std::unordered_set<int> Ransac2D(typename pcl::PointCloud<PointT>::Ptr cloud, int maxIterations, float distanceTol)
+{
+	std::unordered_set<int> inliersResult;
+	srand(time(NULL));
+	
+	while(maxIterations--)
+	{
+		LineSeg<PointT> segment(cloud);
+
+		std::unordered_set<int> inliers = segment.get_inliers(distanceTol);
+
+		if (inliers.size() > inliersResult.size())
+			inliersResult = inliers; 
+	}
+
+	return inliersResult;
+
+}
+
+template<typename PointT>
+std::unordered_set<int> Ransac3D(typename pcl::PointCloud<PointT>::Ptr cloud, int maxIterations, float distanceTol)
+{
+	std::unordered_set<int> inliersResult;
+	srand(time(NULL));
+	
+	while(maxIterations--)
+	{
+		PlaneSeg<PointT> segment(cloud);
+
+		std::unordered_set<int> inliers = segment.get_inliers(distanceTol);
+
+		if (inliers.size() > inliersResult.size())
+			inliersResult = inliers; 
+	}
+
+	return inliersResult;
+
+}
+
+/*****************************************************************************
+ *  End Custom Ransac
+ *****************************************************************************/
 
 template<typename PointT>
 std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::CustomSegmentPlane(typename pcl::PointCloud<PointT>::Ptr cloud, int maxIterations, float distanceThreshold)
@@ -116,7 +311,7 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
     // Time segmentation process
     auto startTime = std::chrono::steady_clock::now();
 
-    std::unordered_set<int> inliers = Ransac3D(cloud, maxIterations, distanceThreshold);
+    std::unordered_set<int> inliers = Ransac3D<PointT>(cloud, maxIterations, distanceThreshold);
 
 	typename pcl::PointCloud<PointT>::Ptr  cloudInliers(new pcl::PointCloud<PointT>());
 	typename pcl::PointCloud<PointT>::Ptr cloudOutliers(new pcl::PointCloud<PointT>());
