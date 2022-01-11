@@ -1,6 +1,8 @@
 // PCL lib Functions for processing point clouds 
 #include <unordered_set>
 #include "processPointClouds.h"
+#include "quiz/cluster/kdtree.h"
+#include <vector>
 
 //constructor:
 template<typename PointT>
@@ -146,7 +148,7 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
 }
 
 /*****************************************************************************
- * Ransac
+ * RANSAC Algorithm
  *****************************************************************************/
 
 template<typename PointT>
@@ -305,6 +307,10 @@ std::unordered_set<int> Ransac3D(typename pcl::PointCloud<PointT>::Ptr cloud, in
  *  End Custom Ransac
  *****************************************************************************/
 
+/*****************************************************************************
+ *  Custom Plane Segmentation
+ *****************************************************************************/
+
 template<typename PointT>
 std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::CustomSegmentPlane(typename pcl::PointCloud<PointT>::Ptr cloud, int maxIterations, float distanceThreshold)
 {
@@ -333,6 +339,114 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
 
     return segResult;
 }
+
+
+/*****************************************************************************
+ *  END Custom Plane Segmentation
+ *****************************************************************************/
+
+/*****************************************************************************
+ *  Custom Clustering
+ *****************************************************************************/
+
+std::vector<std::vector<int>> euclideanCluster(const std::vector<std::vector<float>>& points, custom_impl::KdTree* tree, float distanceTol)
+{
+	std::vector<bool> visited(points.size(), false);
+	std::vector<int> p_stack(points.size());
+
+	std::vector<std::vector<int>> clusters;
+
+	for (int curr_id = 0; curr_id < points.size(); curr_id++)
+	{
+
+		if (!visited[curr_id])
+		{
+			std::vector<int> cluster;
+
+			// find the cluster
+		  //std::vector<int> temp_cluster = tree->search(points[curr_id], distanceTol));
+			//p_stack.insert(p_stack.end(), temp_cluster.begin(), temp_cluster.end());
+			p_stack.push_back(curr_id);
+
+			while (!p_stack.empty())
+			{
+				//int p_id = p_stack.front();
+				//p_stack.pop_front();
+				int p_id = p_stack.back();
+				p_stack.pop_back();
+
+				if (!visited[p_id])
+				{
+					visited[p_id] = true;
+					cluster.push_back(p_id);
+		  		    std::vector<int> temp_cluster = tree->search(points[curr_id], distanceTol);
+					// put all the points
+					p_stack.insert(p_stack.end(), temp_cluster.begin(), temp_cluster.end());
+				}
+
+			}
+			// add cluster to list of clusters
+			clusters.push_back(cluster);
+		}
+	}
+
+	return clusters;
+}
+
+#if 0
+template<typename PointT>
+std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::CustomClustering(typename pcl::PointCloud<PointT>::Ptr cloud, float clusterTolerance, int minSize, int maxSize)
+{
+
+    // Time clustering process
+    auto startTime = std::chrono::steady_clock::now();
+
+    std::vector<typename pcl::PointCloud<PointT>::Ptr> clusters;
+
+    // TODO:: Fill in the function to perform euclidean clustering to group detected obstacles
+    custom_impl::KdTree* tree = new custom_impl::KdTree(3);
+
+    std::vector<std::vector<float>>& points;
+
+    for (int i = 0; i < cloud->points.size(); i++)
+    {
+        std::vector<float> p_temp(cloud->points[i].x, cloud->points[i].y, cloud->points[i].z);
+        points.push_back(p_temp);
+	    tree->insert(points[i],i);
+    }
+
+    std::vector<std::vector<int>> cluster_indices = euclideanCluster(points, tree, clusterTolerance);
+    
+    int j = 0;
+
+    for (std::vector<std::vector<int>>::const_iterator &it = cluster_indices.begin(); it != cluster_indices.end(); it++)
+    {
+        typename pcl::PointCloud<PointT>::Ptr cloud_cluster (new pcl::PointCloud<PointT>);
+
+        for (const auto& idx : *it++)
+        {
+            cloud_cluster->push_back ((*cloud)[idx]);
+        }
+
+        cloud_cluster->width = cloud_cluster->points.size();
+        cloud_cluster->height = 1;
+        cloud_cluster->is_dense = true;
+        
+        clusters.push_back(cloud_cluster);
+        j++;
+    }
+    
+    auto endTime = std::chrono::steady_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    std::cout << "clustering took " << elapsedTime.count() << " milliseconds and found " << clusters.size() << " clusters" << std::endl;
+
+    return clusters;
+}
+#endif
+
+/*****************************************************************************
+ *  END Custom Clustering
+ *****************************************************************************/
 
 template<typename PointT>
 std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::Clustering(typename pcl::PointCloud<PointT>::Ptr cloud, float clusterTolerance, int minSize, int maxSize)
