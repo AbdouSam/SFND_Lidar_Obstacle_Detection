@@ -34,6 +34,7 @@ std::vector<Car> initHighway(bool renderScene, pcl::visualization::PCLVisualizer
 
     return cars;
 }
+
 void cityBlock(pcl::visualization::PCLVisualizer::Ptr& viewer, ProcessPointClouds<pcl::PointXYZI>* pointProcessorI, const pcl::PointCloud<pcl::PointXYZI>::Ptr& inputCloud)
 {
   // ----------------------------------------------------
@@ -48,7 +49,7 @@ void cityBlock(pcl::visualization::PCLVisualizer::Ptr& viewer, ProcessPointCloud
   renderPointCloud(viewer,filterd_cloud,"filterCloud");
 #endif
 
-    // Render the plane segments
+    // Segment into the plane and obstacle
     ProcessPointClouds<pcl::PointXYZI> cloud_processor;
     std::pair<pcl::PointCloud<pcl::PointXYZI>::Ptr, pcl::PointCloud<pcl::PointXYZI>::Ptr> cloud_segs = 
         cloud_processor.CustomSegmentPlane(filterd_cloud, 25, 0.3);
@@ -57,14 +58,13 @@ void cityBlock(pcl::visualization::PCLVisualizer::Ptr& viewer, ProcessPointCloud
     renderPointCloud(viewer, cloud_segs.first, "Plane", Color(0, 1, 0));
 
 #if 0
-    // All obstacles before clustering
+    // Render All obstacles before clustering
     renderPointCloud(viewer, cloud_segs.second, "Obstacles", Color(1, 0, 0));
 #endif
 
-    // Cluster the obstacles into different colors
-    std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cloudClusters = cloud_processor.Clustering(cloud_segs.second, 0.5, 20, 300);
+    // Cluster the segments into individual objects
+    std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cloudClusters = cloud_processor.CustomClustering(cloud_segs.second, 0.5, 20, 300);
 
-    // third phase cluster the segments into individual objects
     int clusterId = 0;
     std::vector<Color> colors = {Color(1,0,1),Color(0,1,1),Color(1,1,0)};
 
@@ -111,7 +111,7 @@ void simpleHighway(pcl::visualization::PCLVisualizer::Ptr& viewer)
 #endif
 
 #if 1
-    std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> cloudClusters = cloud_processor.Clustering(cloud_segs.second, 1.0, 3, 30);
+    std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> cloudClusters = cloud_processor.CustomClustering(cloud_segs.second, 1.0, 3, 30);
 
     // third phase cluster the segments into individual objects
     int clusterId = 0;
