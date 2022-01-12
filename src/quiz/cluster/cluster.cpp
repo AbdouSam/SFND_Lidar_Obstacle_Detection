@@ -74,12 +74,15 @@ void render2DTree(custom_impl::Node* node, pcl::visualization::PCLVisualizer::Pt
 
 }
 
-std::vector<std::vector<int>> euclideanCluster(const std::vector<std::vector<float>>& points, custom_impl::KdTree* tree, float distanceTol)
+std::vector<std::vector<int>> euclideanCluster(
+                                const std::vector<std::vector<float>>& points,
+                                custom_impl::KdTree* tree,
+                                float distanceTol, int min_size, int max_size)
 {
 	std::vector<bool> visited(points.size(), false);
 	std::vector<int> p_stack(points.size());
 
-	std::vector<std::vector<int>> clusters;
+	std::vector<std::vector<int>> clusters_list;
 
 	for (int curr_id = 0; curr_id < points.size(); curr_id++)
 	{
@@ -88,15 +91,11 @@ std::vector<std::vector<int>> euclideanCluster(const std::vector<std::vector<flo
 		{
 			std::vector<int> cluster;
 
-			// find the cluster
-		  //std::vector<int> temp_cluster = tree->search(points[curr_id], distanceTol));
-			//p_stack.insert(p_stack.end(), temp_cluster.begin(), temp_cluster.end());
+			// put the current indice in the cluster and find all the neighboors
 			p_stack.push_back(curr_id);
 
 			while (!p_stack.empty())
 			{
-				//int p_id = p_stack.front();
-				//p_stack.pop_front();
 				int p_id = p_stack.back();
 				p_stack.pop_back();
 
@@ -104,21 +103,29 @@ std::vector<std::vector<int>> euclideanCluster(const std::vector<std::vector<flo
 				{
 					visited[p_id] = true;
 					cluster.push_back(p_id);
-		  		std::vector<int> temp_cluster = tree->search(points[curr_id], distanceTol);
-					// put all the points
+                    // if we reach the max, Drop the current stack and start a new cluster
+                    #if 0
+                    if (cluster.size() == max_size)
+                    {
+                        p_stack.clear();
+                        break;
+                    }
+                    #endif
+
+		  		    std::vector<int> temp_cluster = tree->search(points[curr_id], distanceTol);
+					// put all the points in the stack
 					p_stack.insert(p_stack.end(), temp_cluster.begin(), temp_cluster.end());
 				}
 
 			}
-			// add cluster to list of clusters
-			clusters.push_back(cluster);
-
+			// add cluster to list of clusters_list
+            std::cout << "Found cluster with size " << cluster.size() << std::endl;
+            if (cluster.size() >= min_size)
+			    clusters_list.push_back(cluster);
 		}
-
 	}
 
-	return clusters;
-
+	return clusters_list;
 }
 
 int main ()
@@ -148,7 +155,9 @@ int main ()
 	render2DTree(tree->root,viewer,window, it);
 
 	std::cout << "Test Search" << std::endl;
-	std::vector<int> nearby = tree->search({-6,7},3.0);
+	std::vector<float> p_t = {-6, 7};
+
+	std::vector<int> nearby = tree->search(p_t,3.0);
 	for(int index : nearby)
 		std::cout << index << ",";
 	std::cout << std::endl;
@@ -156,7 +165,7 @@ int main ()
 	// Time segmentation process
 	auto startTime = std::chrono::steady_clock::now();
 	//
-	std::vector<std::vector<int>> clusters = euclideanCluster(points, tree, 3.0);
+	std::vector<std::vector<int>> clusters = euclideanCluster(points, tree, 3.0, 1, 10);
 	//
 	auto endTime = std::chrono::steady_clock::now();
 	auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);

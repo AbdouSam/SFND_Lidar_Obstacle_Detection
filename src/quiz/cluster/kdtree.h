@@ -40,49 +40,31 @@ namespace custom_impl
 
 		void insert(std::vector<float> point, int id)
 		{
-			Node * node = new Node(point, id);
-
-			if (this->root == NULL)
-			{
-				this->root = node;
-				return;
-			}
-
 			int depth = 0;
+			Node **node = &this->root;
 
-			Node * temp = this->root;
+			std::vector<Node **> stack;
 
-			while (temp != NULL)
+			stack.push_back(&this->root);
+
+			while (!stack.empty() && (*node != NULL))
 			{
-				if (point[depth] < temp->point[depth])
+				if (point[depth] < (*node)->point[depth])
 				{
 					// put left
-					if (temp->left == NULL)
-					{
-						temp->left = node;
-						temp = NULL;
-					}
-					else
-					{
-						temp = temp->left;
-					}
+					stack.push_back(&(*node)->left);
 				}
 				else
 				{
-					// put to the right
-					if (temp->right == NULL)
-					{
-						temp->right = node;
-						temp = NULL;
-					}
-					else
-					{
-						temp = temp->right;
-					}
+						stack.push_back(&(*node)->right);
 				}
-				depth = (depth + 1) % K;
+				node = stack.back();
+				stack.pop_back();
+
+				depth = (depth + 1) % this->K;
 			}
 
+			*node = new Node(point, id);
 		}
 
 		bool is_point_inbox(std::vector<float>& point, std::vector<float>& target, float distanceTol)
@@ -118,7 +100,7 @@ namespace custom_impl
 			return false;
 		}
 		// return a list of point ids in the tree that are within distance of target
-		std::vector<int> search(std::vector<float> target, float distanceTol)
+		std::vector<int> search_old(std::vector<float> target, float distanceTol)
 		{
 			std::vector<int> ids;
 
@@ -157,6 +139,49 @@ namespace custom_impl
 
 			return ids;
 		}
+
+		std::vector<int> search(std::vector<float> target, float distanceTol)
+	{
+		std::vector<int> ids;
+
+		// push the node and the depth, so that every node will be compared at 
+		// the correct depth
+		std::vector<std::pair<Node *, int>> stack;
+
+		stack.push_back({this->root, 0});
+
+		while (!stack.empty())
+		{
+			std::pair<Node *, int> p = stack.back();
+			
+			Node * node = p.first;
+			int depth = p.second;
+
+			stack.pop_back();
+
+			if (is_point_inbox(node->point, target, distanceTol))
+			{
+				if (is_point_inraduis(node->point, target, distanceTol))
+					ids.push_back(node->id);
+			}
+
+			// navigate left or right
+			if ((target[depth % this->K] - distanceTol) < node->point[depth % this->K])
+			{
+				if (node->left != NULL)
+					stack.push_back({node->left, depth + 1});
+			}
+
+			if ((target[depth % this->K] + distanceTol) > node->point[depth % this->K])
+			{
+				if (node->right != NULL)
+					stack.push_back({node->right, depth + 1});
+			}
+		}
+
+		return ids;
+	}
+	
 		
 	};
 
