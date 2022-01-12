@@ -90,10 +90,7 @@ namespace custom_impl
 			// sanity check
 			bool p_in_box = true;
 
-			if ((point.size() != target.size()) && (point.size() > 0))
-				return false;
-
-			for (int i = 0; i < point.size(); i++)
+			for (int i = 0; i < this->K; i++)
 			{
 				if (point[i] < (target[i] - distanceTol) || (point[i] > target[i] + distanceTol))
 				{
@@ -107,15 +104,11 @@ namespace custom_impl
 		
 		bool is_point_inraduis(std::vector<float>& point, std::vector<float>& target, float distanceTol)
 		{
-			float distance = 0;
+			float distance = 0.0f;
 
-			if ((point.size() != target.size()) && (point.size() > 0))
-				return false;
-
-
-			for (int i = 0; i < point.size(); i++)
+			for (int i = 0; i < this->K; i++)
 			{
-				distance += (point[i] - target[i]) * ((point[i] - target[i]));
+				distance += ((point[i] - target[i]) * (point[i] - target[i]));
 			}
 			
 			// instead of comparing sqrt we compare it squared for both
@@ -158,7 +151,8 @@ namespace custom_impl
 						stack.push_back(node->right);
 				}
 
-				depth = (depth + 1) % K;
+				depth++;
+				depth = depth % this->K;
 			}
 
 			return ids;
